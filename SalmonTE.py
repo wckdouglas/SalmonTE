@@ -4,7 +4,7 @@
 Usage:
     SalmonTE.py index [--ref_name=ref_name] (--input_fasta=fa_file) [--te_only]
     SalmonTE.py quant [--reference=genome] [--outpath=outpath] [--num_threads=numthreads] [--exprtype=exprtype] FILE...
-    SalmonTE.py test [--inpath=inpath] [--outpath=outpath] [--tabletype=tabletype] [--figtype=figtype]
+    SalmonTE.py test [--inpath=inpath] [--outpath=outpath] [--tabletype=tabletype] [--figtype=figtype] [--analysis_type=analysis_type] [--conditions=conditions]
     SalmonTE.py (-h | --help)
     SalmonTE.py --version
 
@@ -31,12 +31,13 @@ def is_fastq(file_name):
 
 
 def get_basename_noext(file_name):
-    return os.path.basename(file_name.split('.')[0])
+    # return os.path.basename(file_name.split('.')[0])
+    return os.path.basename(file_name).split('.')[0]
 
 
 def get_ext(file_name):
+    # return ".".join(os.path.basename(file_name).split('.')[1:])
     return ".".join(os.path.basename(file_name).split('.')[1:])
-
 
 def longest_prefix(a, b):
     a, b = (b,a) if len(a) > len(b) else (a,b)
@@ -119,8 +120,8 @@ def collect_FASTQ_files(FILE):
             os.symlink(os.path.abspath(b), os.path.join(tmp_dir, trim_b))
             file_list.append([(trim_a, trim_b)])
     else:
+        logging.info("The input dataset is considered as a single-end dataset.")
         for file in sorted(fastq_files):
-            logging.info("The input dataset is considered as a single-end dataset.")
             file_name = os.path.join(tmp_dir, get_basename_noext(file)) + ".{}".format(correct_ext(os.path.basename(file).split('.')[1:]))
             os.symlink(os.path.abspath(file), file_name)
             file_list.append(os.path.basename(file))
@@ -136,22 +137,36 @@ def run_salmon(param):
     import snakemake
     snakefile = os.path.join(os.path.dirname(__file__), "snakemake/Snakefile.paired" if param["paired"] else "snakemake/Snakefile.single")
 
+    os.system('snakemake -s {snakefile} --config input_path={input} '\
+               'output_path={output} salmon_index={ref} salmon={salmon} '\
+               'num_threads={threads} exprtype={expr} -p '\
+                   .format(snakefile = snakefile,
+                   input = param['inpath'],
+                   output = param['--outpath'],
+                   ref = param['--reference'],
+                   salmon = os.path.join(os.path.dirname(__file__),"salmon/{}/bin/salmon"),
+                   threads = param['--num_threads'],
+                   expr = param['--exprtype']))
+    """
     snakemake.snakemake(
         snakefile=snakefile,
         config={
             "input_path": param["inpath"],
             "output_path": param["--outpath"],
-            "index": param["--reference"],
+            "salmon_index": param["--reference"],
             "salmon": os.path.join(os.path.dirname(__file__),"salmon/{}/bin/salmon"),
             "num_threads" : param["--num_threads"],
-            "exprtype": param["--exprtype"]
-        }
+            "exprtype": param["--exprtype"],
+        },
+        quiet=False,
+        printshellcmds=True
     )
+    """
 
     with open(os.path.join(param["--outpath"], "EXPR.csv" ), "r") as inp:
         sample_ids = inp.readline().strip().split(',')[1:]
-    with open(os.path.join(param["--outpath"], "phenotype.csv" ), "w") as oup:
-        oup.write("SampleID,phenotype\n")
+    with open(os.path.join(param["--outpath"], "condition.csv" ), "w") as oup:
+        oup.write("SampleID,condition\n")
         oup.write(
             "\n".join([s+","+"NA" for s in sample_ids]) + "\n"
         )
@@ -222,7 +237,9 @@ def run(args):
             logging.error("Reference file is not found!")
             sys.exit(1)
 
-
+        if args['--reference'].startswith("./"):
+           args['--reference'] = args['--reference'][2:]
+           
         logging.info("Starting quantification mode")
         logging.info("Collecting FASTQ files...")
         param = {**args, **collect_FASTQ_files(args['FILE'])}
@@ -257,18 +274,26 @@ def run(args):
         if args['--figtype'] is None:
             args['--figtype'] = "pdf"
 
+        if args['--analysis_type'] is None:
+            args['--analysis_type'] = "DE"
+        args['--analysis_type'] = args['--analysis_type'].upper()
+        if args['--analysis_type'] != "DE" and args['--analysis_type'] != "LM":
+            logging.error("analysis_type must be set as 'DE' or 'LM'.")
 
+        if args['--conditions'] is None:
+            args['--conditions'] = ""
+        
         #  Rscript SalmonTE_Stats.R SalmonTE_output xls PDF tmp
-        os.system("Rscript {} {} {} {} {}".format( os.path.join(os.path.dirname(__file__), "SalmonTE_Stats.R"),
+        os.system("Rscript {} {} {} {} {} {} {}".format( os.path.join(os.path.dirname(__file__), "SalmonTE_Stats.R"),
                                         args["--inpath"],
                                         args['--tabletype'],
                                         args['--figtype'],
-                                        args['--outpath']))
-
-
+                                        args['--outpath'],
+                                        args['--analysis_type'],
+                                        args['--conditions']))
 
 
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-    args = docopt(__doc__, version='SalmonTE 0.3')
+    args = docopt(__doc__, version='SalmonTE 0.4')
     run(args)

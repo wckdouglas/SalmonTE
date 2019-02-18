@@ -1,7 +1,12 @@
-import sys
 from os.path import join
-INDEX = config["index"]
+import sys
+import pandas as pd
+import json
+from collections import defaultdict
+
+
 INPUT_DIR = config["input_path"]
+INDEX = config['salmon_index']
 OUTPUT_DIR = config["output_path"]
 SALMON_PATH = config["salmon"].format(sys.platform)
 NUM_THREADS = str(config["num_threads"])
@@ -12,11 +17,13 @@ SAMPLE_FOLDER = OUTPUT_DIR + '/{sample_fq}'
 QUANT_FILE = SAMPLE_FOLDER + '/quant.sf'
 GZ_SAMPLE_FOLDER = OUTPUT_DIR + '/{sample_gz}'
 GZ_QUANT_FILE = GZ_SAMPLE_FOLDER + '/quant.sf'
+EXPR_TABLE = OUTPUT_DIR + "/EXPR.csv"
+MAPPING_INFO = OUTPUT_DIR + "/MAPPING_INFO.csv"
 
 
 rule all:
     input:
-        join(OUTPUT_DIR,"EXPR.csv")
+        EXPR_TABLE, MAPPING_INFO
 
 rule run_salmon_fq:
     input:
@@ -56,11 +63,12 @@ rule collect_abundance:
     input:
         expand(QUANT_FILE, sample_fq = SAMPLES_FQ) +
         expand(GZ_QUANT_FILE, sample_gz = SAMPLES_GZ) 
+
     output:
-        join(OUTPUT_DIR,"EXPR.csv")
+        EXPR_TABLE
+
     run:
         def get_abundance(fname):
-            from collections import defaultdict
             abundance = defaultdict( float )
             with open(fname, "r") as inp:
                 line = inp.readline()
@@ -76,6 +84,30 @@ rule collect_abundance:
             sid = file.split("/")[-2]
             tb[sid] = get_abundance(file) 
 
-        import pandas as pd
         with open(str(output), "w") as oup:
             oup.write(pd.DataFrame(tb).to_csv(sep=",", index_label="TE"))
+
+
+rule collect_mappability:
+    input:
+        expand(join(OUTPUT_DIR,"{sample_fq}"), sample_fq = SAMPLES_FQ) +
+        expand(join(OUTPUT_DIR,"{sample_gz}"), sample_gz = SAMPLES_GZ) 
+    output:
+        MAPPING_INFO
+    run:
+        def get_mappability(fname):
+            with open(fname, "r") as inp:
+                data = json.load(inp)
+            sid = file.split("/")[-3]
+            return { 
+                "SampleID" : sid, 
+                "num_mapped": data["num_mapped"], 
+                "num_processed" : data["num_processed"], 
+                "percent_mapped": data["percent_mapped"] }
+        tb = []
+        for file in input:
+            file = join(file, "aux_info/meta_info.json")
+            tb.append(get_mappability(file))
+
+        with open(str(output), "w") as oup:
+            oup.write(pd.DataFrame(tb).set_index("SampleID").to_csv(sep=",", index_label="SampleID"))
