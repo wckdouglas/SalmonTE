@@ -8,6 +8,10 @@ NUM_THREADS = str(config["num_threads"])
 SAMPLES_FQ = glob_wildcards(join(INPUT_DIR, "{sample}_R1.fastq")).sample
 SAMPLES_GZ = glob_wildcards(join(INPUT_DIR, "{sample}_R1.fastq.gz")).sample
 EXPR_TYPE = config["exprtype"]
+SAMPLE_FOLDER = OUTPUT_DIR + '/{sample_fq}'
+QUANT_FILE = SAMPLE_FOLDER + '/quant.sf'
+GZ_SAMPLE_FOLDER = OUTPUT_DIR + '/{sample_gz}'
+GZ_QUANT_FILE = GZ_SAMPLE_FOLDER + '/quant.sf'
 
 
 rule all:
@@ -19,11 +23,15 @@ rule run_salmon_fq:
         idx = INDEX,
         r1 = join(INPUT_DIR, "{sample_fq}_R1.fastq"),
         r2 = join(INPUT_DIR, "{sample_fq}_R2.fastq")
+    params:
+        outdir = SAMPLE_FOLDER
     output:
-        join(OUTPUT_DIR,"{sample_fq}")
-
+        QUANT_FILE
+        
     shell:
-        SALMON_PATH + " quant -q -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {output} -p " + NUM_THREADS
+        SALMON_PATH + " quant -q -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {params.outdir} --writeMappings=- -p " +\
+            NUM_THREADS + \
+            " |samtools view -b -@ " + NUM_THREADS + " > {params.outdir}/aligned.bam "
 
 
 rule run_salmon_gz:
@@ -31,18 +39,23 @@ rule run_salmon_gz:
         idx = INDEX,
         r1 = join(INPUT_DIR, "{sample_gz}_R1.fastq.gz"),
         r2 = join(INPUT_DIR, "{sample_gz}_R2.fastq.gz")
+    params:
+        outdir = GZ_SAMPLE_FOLDER
+        
     output:
-        join(OUTPUT_DIR,"{sample_gz}")
+        GZ_QUANT_FILE
 
     shell:
-        SALMON_PATH + " quant -q -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {output} -p " + NUM_THREADS
+        SALMON_PATH + " quant -q -i {input.idx} -l A -1 {input.r1} -2 {input.r2} -o {params.outdir} --writeMappings=- -p " + \
+            NUM_THREADS + \
+            " |samtools view -b -@ " + NUM_THREADS + " > {params.outdir}/aligned.bam "
 
 
 
 rule collect_abundance:
     input:
-        expand(join(OUTPUT_DIR,"{sample_fq}"), sample_fq = SAMPLES_FQ) +
-        expand(join(OUTPUT_DIR,"{sample_gz}"), sample_gz = SAMPLES_GZ) 
+        expand(QUANT_FILE, sample_fq = SAMPLES_FQ) +
+        expand(GZ_QUANT_FILE, sample_gz = SAMPLES_GZ) 
     output:
         join(OUTPUT_DIR,"EXPR.csv")
     run:
@@ -60,7 +73,6 @@ rule collect_abundance:
 
         tb = dict()
         for file in input:
-            file = join(file, "quant.sf")
             sid = file.split("/")[-2]
             tb[sid] = get_abundance(file) 
 

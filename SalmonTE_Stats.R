@@ -141,9 +141,10 @@ GenerateOutput <- function(dat) {
 
 args <- commandArgs(T)
 
-tpm <- read.csv(file.path(args[1], "EXPR.csv"), row.names="TE", check.names = FALSE)
 phenoData <- read.csv(file.path(args[1], "phenotype.csv"), 
                       row.names = "SampleID")
+tpm <- read.csv(file.path(args[1], "EXPR.csv"), row.names="TE", check.names = FALSE) %>%
+    select(row.names(phenoData))
 annotation <- read.csv(file.path(args[1], "clades.csv"))
 dat <- SalmonTE(tpm, phenoData, annotation, args[2], args[3], args[4])
 GenerateOutput(dat)
