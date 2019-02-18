@@ -156,20 +156,20 @@ GenerateOutput <- function(dat) {
 message("Step 2: Loading input data...")
 args <- commandArgs(T)
 
-phenoData <- read.csv(file.path(args[1], "phenotype.csv"), 
+col_data <- read.csv(file.path(args[1], "condition.csv"), 
                       row.names = "SampleID")
 tpm <- read.csv(file.path(args[1], "EXPR.csv"), row.names="TE", check.names = FALSE) %>%
-    select(row.names(phenoData))
+    select(row.names(col_data))
 analysis <- args[5]
 condition_level <- NULL
 if(analysis == "DE" && !is.na(args[6])) {
   condition_level <- str_split(args[6], ",", simplify = T)
 }
-count <- read.csv(file.path(args[1], "EXPR.csv"), row.names="TE", check.names = FALSE)
-col_data <- read.csv(file.path(args[1], "condition.csv"), row.names = "SampleID")
+#count <- read.csv(file.path(args[1], "EXPR.csv"), row.names="TE", check.names = FALSE)
+#col_data <- read.csv(file.path(args[1], "condition.csv"), row.names = "SampleID")
 annotation <- read.csv(file.path(args[1], "clades.csv"))
 message(sprintf("Step 3: Running the %s analysis...", analysis))
-dat <- SalmonTE(count, col_data, annotation, analysis, condition_level, args[2], args[3], args[4])
+dat <- SalmonTE(tpm, col_data, annotation, analysis, condition_level, args[2], args[3], args[4])
 
 message(sprintf("Step 4: Generating output...", analysis))
 suppressMessages(GenerateOutput(dat))
